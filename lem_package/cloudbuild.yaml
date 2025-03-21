@@ -1,0 +1,19 @@
+steps:
+# Build the Docker image
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '-t', '$_IMAGE_TAG', '-f', 'lem_package/Dockerfile.simple', '.']
+
+# Push the image to Artifact Registry
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['push', '$_IMAGE_TAG']
+
+substitutions:
+  _IMAGE_TAG: ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_IMAGE_NAME}:latest
+  _REPO_NAME: lem-repo
+  _IMAGE_NAME: lem-model-simple
+  _REGION: us-central1
+
+images:
+- '$_IMAGE_TAG'
+
+timeout: 1800s 

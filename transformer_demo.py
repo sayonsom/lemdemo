@@ -122,88 +122,144 @@ def main():
     parser.add_argument('--capability', type=str, help='Specify a capability for a custom event')
     parser.add_argument('--state', type=str, help='Specify a state for a custom event')
     parser.add_argument('--top', type=int, default=1, help='Show top N most similar actions')
+    parser.add_argument('--interactive', action='store_true', help='Enable interactive mode to enter custom events')
     args = parser.parse_args()
     
     # Check if saved model exists
+    model = EventTransformerModel(input_dim=7, embed_dim=128)
     if os.path.exists('transformer_model.pt'):
-        # Load the saved model
-        model = EventTransformerModel(input_dim=7, embed_dim=128)
-        model.load_state_dict(torch.load('transformer_model.pt'))
+        try:
+            # Try to load the saved model
+            model.load_state_dict(torch.load('transformer_model.pt', weights_only=False))
+            model.eval()
+            print("Loaded saved Transformer model from transformer_model.pt")
+        except Exception as e:
+            print(f"Error loading model: {e}")
+            print("Creating a new model instead...")
+            model.eval()
+            # Save the new model
+            torch.save(model.state_dict(), 'transformer_model.pt')
+            print("Saved new Transformer model to transformer_model.pt")
+    else:
         model.eval()
-        print("Loaded saved Transformer model from transformer_model.pt")
+        # Save the model
+        torch.save(model.state_dict(), 'transformer_model.pt')
+        print("Saved new Transformer model to transformer_model.pt")
         
-        # Check if saved embeddings exist
-        if os.path.exists('transformer_embeddings.pt') and os.path.exists('transformer_actions.json'):
+    # Check if saved embeddings exist
+    if os.path.exists('transformer_embeddings.pt') and os.path.exists('transformer_actions.json'):
+        try:
             # Load saved embeddings and actions
-            historical_embeddings = torch.load('transformer_embeddings.pt')
+            historical_embeddings = torch.load('transformer_embeddings.pt', weights_only=False)
             with open('transformer_actions.json', 'r') as f:
                 historical_actions = json.load(f)
             print(f"Loaded saved embeddings (shape: {historical_embeddings.shape}) and {len(historical_actions)} actions")
-            
-            # Load dataset for recent events
-            with open('event_dataset.json', 'r') as f:
-                dataset = json.load(f)
-            
-            # Get recent events - either from dataset or create custom event
-            if args.device and args.capability and args.state:
-                # Create a custom event
-                custom_event = {
-                    "device": args.device,
-                    "capability": args.capability,
-                    "attributes": {"state": args.state},
-                    "timestamp": datetime.now().isoformat()
-                }
-                
-                # Use the last 4 events from the dataset and add the custom event
-                recent_events = dataset[0][-4:] + [custom_event]
-                print("\nUsing context with your custom event:")
-            else:
-                # Use default events from dataset
-                recent_events = dataset[0][-5:]  # Last 5 events as context
-                print("\nUsing these recent events as context:")
-            
-            for i, event in enumerate(recent_events):
-                print(f"{i+1}. Device: {event['device']}, Capability: {event['capability']}, State: {event['attributes']['state']}")
-            
-            # Generate embeddings for recent events
-            event_embedding = get_event_embedding(recent_events, model)
-            print(f"\nGenerated embedding shape: {event_embedding.shape}")
-            
-            # Calculate similarity
-            similarities = nn.CosineSimilarity(dim=1)(
-                event_embedding, 
-                historical_embeddings.squeeze(1)
-            )
-            
-            # Get top N most similar actions
-            top_n = min(args.top, len(similarities))
-            top_indices = torch.topk(similarities, top_n).indices.tolist()
-            top_similarities = torch.topk(similarities, top_n).values.tolist()
-            
-            print("\n=== Prediction Results ===")
-            for i, (idx, similarity) in enumerate(zip(top_indices, top_similarities)):
-                suggested_action = historical_actions[idx]
-                print(f"\nTop {i+1} (Similarity: {similarity:.4f}):")
-                print(f"Recommendation: Set {suggested_action['device']} {suggested_action['capability']} to {suggested_action['state']}")
-            
-            return
-    
-    # If no saved model or embeddings, create and save them
-    model = EventTransformerModel(input_dim=7, embed_dim=128)
-    model.eval()
-    
-    # Save the model
-    torch.save(model.state_dict(), 'transformer_model.pt')
-    print("Saved Transformer model to transformer_model.pt")
-    
+        except Exception as e:
+            print(f"Error loading embeddings: {e}")
+            print("Will create new embeddings...")
+            historical_embeddings = None
+            historical_actions = None
+    else:
+        historical_embeddings = None
+        historical_actions = None
+        
     # Load dataset
     with open('event_dataset.json', 'r') as f:
         dataset = json.load(f)
     
     # Get recent events
-    recent_events = dataset[0][-5:]  # Last 5 events as context
+    if args.interactive:
+        # Interactive mode - prompt user for custom events
+        print("\n=== Interactive Mode ===")
+        print("Enter custom events (up to 5). Press Enter with empty device name to finish.")
+        
+        custom_events = []
+        max_events = 5
+        
+        # List available devices, capabilities, and states for reference
+        available_devices = ["smart_light", "smart_tv", "smart_thermostat", "smart_lock", "smartphone", "washer", "dryer"]
+        available_capabilities = {
+            "smart_light": ["power", "brightness_control", "color_control"],
+            "smart_tv": ["power", "volume_control", "channel_control"],
+            "smart_thermostat": ["temperature_control", "mode_control"],
+            "smart_lock": ["lock_control"],
+            "smartphone": ["incoming_call", "app_usage"],
+            "washer": ["power", "cycle_control", "door_control"],
+            "dryer": ["power", "cycle_control", "door_control"]
+        }
+        available_states = {
+            "power": ["ON", "OFF"],
+            "brightness_control": ["BRIGHT", "DIM", "OFF"],
+            "color_control": ["RED", "GREEN", "BLUE", "WHITE"],
+            "volume_control": ["LOUD", "QUIET", "MUTE"],
+            "channel_control": ["CHANNEL_1", "CHANNEL_2", "CHANNEL_3"],
+            "temperature_control": ["COOL", "WARM", "HOT"],
+            "mode_control": ["ECO", "NORMAL", "BOOST"],
+            "lock_control": ["LOCKED", "UNLOCKED"],
+            "incoming_call": ["CALL_RECEIVED", "NO_CALL"],
+            "app_usage": ["ACTIVE", "INACTIVE"],
+            "cycle_control": ["WASH", "RINSE", "SPIN", "DRY"],
+            "door_control": ["OPEN", "CLOSED"]
+        }
+        
+        print("\nAvailable devices:", ", ".join(available_devices))
+        
+        for i in range(max_events):
+            print(f"\nEvent {i+1}/{max_events}:")
+            device = input("Device (or Enter to finish): ").strip()
+            if not device:
+                break
+                
+            # Show available capabilities for the selected device
+            if device in available_capabilities:
+                print(f"Available capabilities for {device}: {', '.join(available_capabilities[device])}")
+            
+            capability = input("Capability: ").strip()
+            
+            # Show available states for the selected capability
+            if capability in available_states:
+                print(f"Available states for {capability}: {', '.join(available_states[capability])}")
+                
+            state = input("State: ").strip()
+            
+            custom_event = {
+                "device": device,
+                "capability": capability,
+                "attributes": {"state": state},
+                "timestamp": datetime.now().isoformat()
+            }
+            custom_events.append(custom_event)
+        
+        if custom_events:
+            # Use custom events
+            if len(custom_events) < 5:
+                # Fill remaining slots with events from dataset
+                remaining = 5 - len(custom_events)
+                recent_events = dataset[0][-remaining:] + custom_events
+            else:
+                recent_events = custom_events
+            print("\nUsing your custom events as context:")
+        else:
+            # No custom events entered, use default
+            recent_events = dataset[0][-5:]  # Last 5 events as context
+            print("\nUsing these recent events as context:")
+    elif args.device and args.capability and args.state:
+        # Single custom event from command line
+        custom_event = {
+            "device": args.device,
+            "capability": args.capability,
+            "attributes": {"state": args.state},
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        # Use the last 4 events from the dataset and add the custom event
+        recent_events = dataset[0][-4:] + [custom_event]
+        print("\nUsing context with your custom event:")
+    else:
+        # Use default events from dataset
+        recent_events = dataset[0][-5:]  # Last 5 events as context
+        print("\nUsing these recent events as context:")
     
-    print("\nUsing these recent events as context:")
     for i, event in enumerate(recent_events):
         print(f"{i+1}. Device: {event['device']}, Capability: {event['capability']}, State: {event['attributes']['state']}")
     

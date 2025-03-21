@@ -1,0 +1,7 @@
+torch==1.13.1
+numpy>=1.20.0
+scikit-learn>=1.0.0
+joblib>=1.0.0
+fastapi>=0.95.0
+uvicorn>=0.21.0
+pydantic>=1.10.7 

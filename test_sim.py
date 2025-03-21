@@ -1,0 +1,1 @@
+from torch import Tensor; import torch; import numpy as np; t = torch.randn(1, 128); h = torch.randn(2275, 1, 128); t_np = t.numpy(); h_np = h.squeeze(1).numpy(); dot = np.dot(t_np, h_np.T); norms_t = np.linalg.norm(t_np, axis=1); norms_h = np.linalg.norm(h_np, axis=1); sim = dot / (norms_t.reshape(-1, 1) * norms_h); top = np.argsort(sim.flatten())[-3:][::-1]; print(top)
